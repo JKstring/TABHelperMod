@@ -2,7 +2,7 @@
 
 This project provides a sample Mod for *They Are Billions*, designed to help players quickly create and load their own Mods, as well as demonstrate some of the game’s features.
 
-*[中文版README请点击这里](#中文说明)*
+*[中文版README请点击这里](README_zh.md)*
 
 ## Quick Guide to Creating and Loading a Mod
 

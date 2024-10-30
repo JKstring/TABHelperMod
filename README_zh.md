@@ -11,8 +11,8 @@
 2. 定义一个继承自 `TABModLoader.ModBase` 抽象类的类，并实现 `OnLoad` 方法。
    - 该方法包含一个 `TABModLoader.ModInfos` 类型的参数，该参数包含所有 Steam 创意工坊信息，如标题、描述、作者、路径等。
 
-3. 编译并生成 Mod DLL 文件，然后使用 Windows 右键菜单选择“发送到 -> 压缩(zipped)文件夹”，将 `.zip` 扩展名改为 `.jpg`。
-   - 将生成的文件放置在 They Are Billions 地图项目文件夹中并上传至 Steam 创意工坊。
+3. 编译并生成 Mod DLL 文件，然后使用 Windows 右键菜单选择“发送到 -> 压缩(zipped)文件夹”。将生成的 `.zip` 文件扩展名改为 `.jpg`，并重命名文件为 `TAB.ModContent.jpg`。
+   - 将生成的 `TAB.ModContent.jpg` 文件放置在 *They Are Billions* 地图项目文件夹中并上传至 Steam 创意工坊。
 
 完成后，其他玩家只需订阅该 Mod，启动游戏时便会自动加载。
 

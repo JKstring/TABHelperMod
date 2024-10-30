@@ -13,12 +13,10 @@ This project provides a sample Mod for *They Are Billions*, designed to help pla
 2. Define a class that inherits from the abstract class `TABModLoader.ModBase` and implement the `OnLoad` method.
    - This method takes a `TABModLoader.ModInfos` parameter that contains Steam Workshop information such as title, description, author, path, etc.
 
-3. Compile and generate the Mod DLL file, then use the Windows right-click menu to select "Send to -> Compressed (zipped) folder." Change the `.zip` extension to `.jpg`.
-   - Place the generated file in your *They Are Billions* map project folder and upload it to the Steam Workshop.
+3. Compile and generate the Mod DLL file, then use the Windows right-click menu to select "Send to -> Compressed (zipped) folder." Change the `.zip` extension to `.jpg`, and rename the file to `TAB.ModContent.jpg`.
+   - Place the generated `TAB.ModContent.jpg` file in your *They Are Billions* map project folder and upload it to the Steam Workshop.
 
 Once complete, other players need only subscribe to the Mod, and it will automatically load upon game start.
-
----
 
 ## Special Notes
 

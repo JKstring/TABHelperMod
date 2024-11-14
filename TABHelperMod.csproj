@@ -43,6 +43,10 @@
       <HintPath>References\EasySharpIni.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="Fasterflect.Netstandard">
+      <HintPath>References\Fasterflect.Netstandard.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
@@ -63,14 +67,18 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="EasySharpIniEX.cs" />
     <Compile Include="GamePatch.cs" />
     <Compile Include="ModEntry.cs" />
+    <Compile Include="ModOptions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />
     <None Include="README_zh.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="LICENSE.txt" />
+    <Content Include="todo.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

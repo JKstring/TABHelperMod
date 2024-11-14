@@ -8,31 +8,13 @@ using System.Linq;
 using System.Reflection;
 using TABModLoader;
 using TABModLoader.Utils;
+using Fasterflect;
+using static TABModLoader.Utils.Decryptor;
 
 namespace TABHelperMod
 {
     public class GamePatch
     {
-        internal static EasySharpIni.IniFile ini;// = new EasySharpIni.IniFile("TABHelper.ini").Parse();
-
-        public enum FuncConfigList
-        {
-            KeepDisplayAllLifeMeters,
-            AutoGoWatchTower,
-            AutoGoWatchTowerRadius,
-            NumpadFilterVeteran,
-            GameSpeedChange,
-            FilterVeteranUnit,
-            AutoFindBonusItem,
-            AutoDisperse,
-            FastAttack,
-            OptimizeTrainingSequence,
-            DestroyAllSelectedUnits,
-            GameMenuEnhancer,
-            OptimizeAttackPriority,
-            CancelResearchAnytime
-        }
-
         static string[] aviableCommands = new string[] { "ZX.Commands.Hold", "ZX.Commands.Attack", "ZX.Commands.Patrol", "ZX.Commands.Stop", "ZX.Commands.Chase" };
         static Type HumanArmyUnitType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.HumanArmyUnit");
         static Type CInsideBuildingType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CInsideBuilding");
@@ -45,79 +27,89 @@ namespace TABHelperMod
             {
                 var actor = __args[0];
                 var target = __args[1];
-                int FastAttack = ini.GetField(FuncConfigList.FastAttack, "0").Get(new EasySharpIni.Converters.IntConverter());
-                if (FastAttack == 0)
-                    return;
                 bool isHumanArmyUnit = actor.GetType().IsSubclassOf(HumanArmyUnitType);
                 if (!isHumanArmyUnit)
                     return;
                 //System.Threading.Tasks.Task.Run(() =>
                 //{
-                    //Check if inside the building, if inside the building, do not execute the reset command
-                    var HasComponent = AccessToolsEX.MethodWithDecrypt(actor.GetType(), "HasComponent", null, new Type[] { CInsideBuildingType });
-                    bool isInBuilding = (bool)HasComponent.Invoke(actor, null);
-                    if (isInBuilding)
-                        return;
+                //Check if inside the building, if inside the building, do not execute the reset command
+                //var HasComponent = AccessToolsEX.MethodWithDecrypt(actor.GetType(), "HasComponent", null, new Type[] { CInsideBuildingType });
+                //bool isInBuilding = (bool)HasComponent.Invoke(actor, null);
+                //if (isInBuilding)
+                //    return;
+                bool isInBuilding = (bool)actor.CallMethod(new Type[] { CInsideBuildingType }, D("HasComponent"));
+                if (isInBuilding)
+                    return;
+                var CCommandable = actor.CallMethod(D("get_CCommandable"));
+                //var CCommandable = Traverse.Create(actor).MethodWithDecrypt("get_CCommandable").GetValue();
+                //var CurrentCommand = Traverse.Create(CCommandable).MethodWithDecrypt("get_Command").GetValue();
+                var CurrentCommand = CCommandable.CallMethod(D("get_Command"));
+                Type CurrentCommandType = CurrentCommand != null ? CurrentCommand.GetType() : null;
 
-                    var CCommandable = Traverse.Create(actor).MethodWithDecrypt("get_CCommandable").GetValue();
-                    var CurrentCommand = Traverse.Create(CCommandable).MethodWithDecrypt("get_Command").GetValue();
-                    Type CurrentCommandType = CurrentCommand != null ? CurrentCommand.GetType() : null;
+                if (CurrentCommandType != null && !aviableCommands.Contains(CurrentCommandType.FullName))
+                {
+                    return;
+                }
 
-                    if (CurrentCommandType != null && !aviableCommands.Contains(CurrentCommandType.FullName))
+                if (CurrentCommandType != null && CurrentCommandType.FullName == "ZX.Commands.Hold")
+                {
+                    var CanStop = Traverse.Create(actor).MethodWithDecrypt("get_Params").Property<bool>("CanStop").Value;
+                    if (CanStop)
                     {
-                        return;
-                    }
 
-                    if (CurrentCommandType != null && CurrentCommandType.FullName == "ZX.Commands.Hold")
-                    {
-                        var CanStop = Traverse.Create(actor).MethodWithDecrypt("get_Params").Property<bool>("CanStop").Value;
-                        if (CanStop)
+
+                        var Position = ((DXEntity)actor).Position;
+                        var ZXCommandTarget = AccessToolsEX.CreateInstance(AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommandTarget"), new object[] { Position });
+
+
+                        //Traverse.Create(actor).MethodWithDecrypt("get_CCommandable").PropertyWithDecrypt("Target").SetValue(ZXCommandTarget);
+                        CCommandable.SetPropertyValue(D("Target"), ZXCommandTarget);
+
+                        var AttackCommand = AttackCommandGetMethon.Invoke(null, null);
+
+                        //Traverse.Create(actor).MethodWithDecrypt("get_CCommandable").MethodWithDecrypt("set_Command", new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommand") }).GetValue(AttackCommand);
+                        CCommandable.CallMethod(D("set_Command"), AttackCommand);
+
+                        //Traverse.Create(AttackCommand).MethodWithDecrypt("Execute", new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.ZXEntity"), AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommandTarget") }).GetValue(actor, ZXCommandTarget);
+                        AttackCommand.CallMethod(D("Execute"), actor, target);
+
+
+                        //Traverse.Create(CCommandable).MethodWithDecrypt("CancellAllCommandsQueued").GetValue();
+                        CCommandable.CallMethod(D("CancellAllCommandsQueued"));
+
+                        //var OrdersQueued = Traverse.Create(CCommandable).PropertyWithDecrypt("OrdersQueued").GetValue();
+                        var OrdersQueued = CCommandable.GetPropertyValue(D("OrdersQueued"));
+                        if (OrdersQueued == null)
                         {
-
-
-                            var Position = ((DXEntity)actor).Position;
-                            var ZXCommandTarget = AccessToolsEX.CreateInstance(AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommandTarget"), new object[] { Position });
-
-
-                            Traverse.Create(actor).MethodWithDecrypt("get_CCommandable").PropertyWithDecrypt("Target").SetValue(ZXCommandTarget);
-
-
-                            var AttackCommand = AttackCommandGetMethon.Invoke(null, null);
-
-                            Traverse.Create(actor).MethodWithDecrypt("get_CCommandable").MethodWithDecrypt("set_Command", new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommand") }).GetValue(AttackCommand);
-
-                            Traverse.Create(AttackCommand).MethodWithDecrypt("Execute", new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.ZXEntity"), AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommandTarget") }).GetValue(actor, ZXCommandTarget);
-
-
-
-                            Traverse.Create(CCommandable).MethodWithDecrypt("CancellAllCommandsQueued").GetValue();
-
-
-                            var OrdersQueued = Traverse.Create(CCommandable).PropertyWithDecrypt("OrdersQueued").GetValue();
-                            if (OrdersQueued == null)
-                            {
-                                var listType = typeof(List<>).MakeGenericType(AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXOrder"));
-                                var list = Activator.CreateInstance(listType);
-                                Traverse.Create(CCommandable).PropertyWithDecrypt("OrdersQueued").SetValue(list);
-                            }
-                            var count = Traverse.Create(CCommandable).PropertyWithDecrypt("OrdersQueued").Property("Count").GetValue<int>();
-                            if (count == 0)
-                            {
-                                var hold = AccessToolsEX.MethodWithDecrypt(AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommand"), "Get", generics: new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.Hold") });
-                                var HoldCommand = hold.Invoke(null, null);
-                                OrdersQueued = Traverse.Create(CCommandable).PropertyWithDecrypt("OrdersQueued").GetValue();
-                                Traverse.Create(CCommandable).MethodWithDecrypt("EnqueueCommand", new Type[] { ZXCommandType, ZXCommandTargetType }).GetValue(HoldCommand, target);
-                            }
-
-                            return;
+                            var listType = typeof(List<>).MakeGenericType(AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXOrder"));
+                            var list = Activator.CreateInstance(listType);
+                            //Traverse.Create(CCommandable).PropertyWithDecrypt("OrdersQueued").SetValue(list);
+                            CCommandable.SetPropertyValue(D("OrdersQueued"), list);
                         }
-                    }
+                        //var count = Traverse.Create(CCommandable).PropertyWithDecrypt("OrdersQueued").Property("Count").GetValue<int>();
+                        var count = (int)OrdersQueued.GetPropertyValue("Count");
+                        if (count == 0)
+                        {
+                            var hold = AccessToolsEX.MethodWithDecrypt(AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommand"), "Get", generics: new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.Hold") });
+                            var HoldCommand = hold.Invoke(null, null);
+                            //OrdersQueued = Traverse.Create(CCommandable).PropertyWithDecrypt("OrdersQueued").GetValue();
+                            //Traverse.Create(CCommandable).MethodWithDecrypt("EnqueueCommand", new Type[] { ZXCommandType, ZXCommandTargetType }).GetValue(HoldCommand, target);
+                            CCommandable.CallMethod(D("EnqueueCommand"), HoldCommand, target);
+                        }
 
-
-                    if (Traverse.Create(actor).MethodWithDecrypt("get_CBehaviour").GetValue() != null)
-                    {
-                        Traverse.Create(actor).MethodWithDecrypt("get_CBehaviour").MethodWithDecrypt("set_PerformResetMemNodes", new Type[] { typeof(bool) }).GetValue(true);
+                        return;
                     }
+                }
+                var CBehaviour = actor.CallMethod(D("get_CBehaviour"));
+                if (CBehaviour != null)
+                {
+                    CBehaviour.CallMethod(D("set_PerformResetMemNodes"), new object[] { true });
+                }
+
+                //if (Traverse.Create(actor).MethodWithDecrypt("get_CBehaviour").GetValue() != null)
+                //{
+                //    Traverse.Create(actor).MethodWithDecrypt("get_CBehaviour").MethodWithDecrypt("set_PerformResetMemNodes", new Type[] { typeof(bool) }).GetValue(true);
+                //}
                 //});
             }
             catch (Exception e)
@@ -142,8 +134,7 @@ namespace TABHelperMod
             {
                 if (key == DXKeys.Y)
                 {
-                    var KeepDisplayAllLifeMeters = ini.GetField(FuncConfigList.KeepDisplayAllLifeMeters, "1").Get(new EasySharpIni.Converters.IntConverter());
-                    if (KeepDisplayAllLifeMeters == 0)
+                    if (!ModOptions.Instance.KeepDisplayAllLifeMeters)
                     {
                         return;
                     }
@@ -154,8 +145,7 @@ namespace TABHelperMod
                 }
                 else if (key == DXKeys.F)
                 {
-                    var AutoGoWatchTower = ini.GetField(FuncConfigList.AutoGoWatchTower, "1").Get(new EasySharpIni.Converters.IntConverter());
-                    if (AutoGoWatchTower == 0)
+                    if (!ModOptions.Instance.AutoGoWatchTower)
                     {
                         return;
                     }
@@ -163,8 +153,7 @@ namespace TABHelperMod
                 }
                 else if (key >= DXKeys.NumPad1 && key <= DXKeys.NumPad9)
                 {
-                    var NumpadFilterVeteran = ini.GetField(FuncConfigList.NumpadFilterVeteran, "1").Get(new EasySharpIni.Converters.IntConverter());
-                    if (NumpadFilterVeteran == 0)
+                    if (!ModOptions.Instance.NumpadFilterVeteran)
                     {
                         return;
                     }
@@ -173,8 +162,7 @@ namespace TABHelperMod
                 }
                 else if (key == DXKeys.D0)
                 {
-                    var GameSpeedChange = ini.GetField(FuncConfigList.GameSpeedChange, "1").Get(new EasySharpIni.Converters.IntConverter());
-                    if (GameSpeedChange == 0)
+                    if (!ModOptions.Instance.GameSpeedChange)
                     {
                         return;
                     }
@@ -197,8 +185,7 @@ namespace TABHelperMod
                 }
                 else if (key == DXKeys.Oemplus)
                 {
-                    var GameSpeedChange = ini.GetField(FuncConfigList.GameSpeedChange, "1").Get(new EasySharpIni.Converters.IntConverter());
-                    if (GameSpeedChange == 0)
+                    if (!ModOptions.Instance.GameSpeedChange)
                     {
                         return;
                     }
@@ -221,8 +208,7 @@ namespace TABHelperMod
                 }
                 else if (key == DXKeys.OemMinus)
                 {
-                    var GameSpeedChange = ini.GetField(FuncConfigList.GameSpeedChange, "1").Get(new EasySharpIni.Converters.IntConverter());
-                    if (GameSpeedChange == 0)
+                    if (!ModOptions.Instance.GameSpeedChange)
                     {
                         return;
                     }
@@ -245,12 +231,11 @@ namespace TABHelperMod
                         Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("ShowMessage", new Type[] { typeof(string), typeof(System.Drawing.Color), typeof(int) }).GetValue("Now Game Speed: " + GameSpeed, System.Drawing.Color.White, 2000);
                     }
 
-                   
+
                 }
                 else if (key == DXKeys.V)
                 {
-                    var FilterVeteranUnit = ini.GetField(FuncConfigList.FilterVeteranUnit, "1").Get(new EasySharpIni.Converters.IntConverter());
-                    if (FilterVeteranUnit == 0)
+                    if (!ModOptions.Instance.FilterVeteranUnit)
                     {
                         return;
                     }
@@ -258,8 +243,7 @@ namespace TABHelperMod
                 }
                 else if (key == DXKeys.L)
                 {
-                    var AutoFindBonusItem = ini.GetField(FuncConfigList.AutoFindBonusItem, "1").Get(new EasySharpIni.Converters.IntConverter());
-                    if (AutoFindBonusItem == 0)
+                    if (!ModOptions.Instance.AutoFindBonusItem)
                     {
                         return;
                     }
@@ -342,8 +326,7 @@ namespace TABHelperMod
                 }
                 else if (key == DXKeys.E)
                 {
-                    var AutoDisperse = ini.GetField(FuncConfigList.AutoDisperse, "1").Get(new EasySharpIni.Converters.IntConverter());
-                    if (AutoDisperse == 0)
+                    if (!ModOptions.Instance.AutoDisperse)
                     {
                         return;
                     }
@@ -426,8 +409,7 @@ namespace TABHelperMod
                 }
                 else if (key == DXKeys.Delete)
                 {
-                    var DestroyAllSelectedUnits = ini.GetField(FuncConfigList.DestroyAllSelectedUnits, "1").Get(new EasySharpIni.Converters.IntConverter());
-                    if (DestroyAllSelectedUnits == 0)
+                    if (!ModOptions.Instance.DestroyAllSelectedUnits)
                     {
                         return;
                     }
@@ -487,25 +469,6 @@ namespace TABHelperMod
 
                         Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.GUI.ZXMessageBox")).MethodWithDecrypt("AskYesNo", new Type[] { typeof(string), typeof(string), typeof(Action), typeof(Action) }).GetValue(title, description, onYes, onNo);
                     }
-                }
-                else if (key == DXKeys.F1)
-                {
-                    var CSelectableType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CSelectable");
-                    var ZXEntity_CurrentEntitySelected = Traverse.Create(CSelectableType).MethodWithDecrypt("get_CurrentEntitySelected").GetValue();
-                    if (ZXEntity_CurrentEntitySelected == null)
-                    {
-                        return;
-                    }
-                    string name = Traverse.Create(ZXEntity_CurrentEntitySelected).MethodWithDecrypt("get_Params").PropertyWithDecrypt("Name").GetValue<string>();
-                    string id = Traverse.Create(ZXEntity_CurrentEntitySelected).MethodWithDecrypt("get_Params").PropertyWithDecrypt("ID").GetValue<string>();
-                    string zxkey = Traverse.Create(ZXEntity_CurrentEntitySelected).MethodWithDecrypt("get_Params").PropertyWithDecrypt("Key").GetValue<string>();
-                    int power = Traverse.Create(ZXEntity_CurrentEntitySelected).MethodWithDecrypt("get_Params").PropertyWithDecrypt("Power").GetValue<int>();
-                    Debug.Log(name + " " + id + " " + zxkey + " " + power);
-                }
-                else if (key == DXKeys.F2)
-                {
-                    var WorkshopItems = Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSteam")).MethodWithDecrypt("GetWorkshopItems").GetValue();
-                    Debug.Log(Traverse.Create(WorkshopItems).Property("Count").GetValue<int>() + " workshop items found.");
                 }
             }
             catch (Exception e)
@@ -716,6 +679,14 @@ namespace TABHelperMod
                         break;
                     }
                     DXEntity ItemEntity = Traverse.Create(item).PropertyWithDecrypt("Entity").GetValue<DXEntity>();
+
+                    // Check if the unit has the ability to ascend the tower
+                    bool CanEnterInBuildings = Traverse.Create(ItemEntity).MethodWithDecrypt("get_Params").PropertyWithDecrypt("CanEnterInBuildings").GetValue<bool>();
+                    if (!CanEnterInBuildings)
+                    {
+                        continue;
+                    }
+
                     var EntityCCommandable = Traverse.Create(ItemEntity).MethodWithDecrypt("get_CCommandable").GetValue();//((ZXEntity)(item.Entity)).get_CCommandable();
                     if (Traverse.Create(EntityCCommandable).MethodWithDecrypt("get_Command").GetValue()?.GetType().FullName == "ZX.Commands.Travel")
                     {
@@ -737,7 +708,7 @@ namespace TABHelperMod
 
                     DXEntity nearestHolder = null;
                     float minDistance = float.MaxValue;
-                    float radius = ini.GetField(FuncConfigList.AutoGoWatchTowerRadius, "10.0").Get(new EasySharpIni.Converters.FloatConverter());
+                    float radius = ModOptions.Instance.AutoGoWatchTowerRadius;
 
                     foreach (var holder in holderUsedSlotCount.Keys)
                     {
@@ -786,12 +757,22 @@ namespace TABHelperMod
             });
         }
 
+        static internal MemberGetter ZXEntityDefaultParamsIDGetter;
         internal static void OnGetPower(object __instance, ref int __result)
         {
-            int OptimizeAttackPriority = ini.GetField(FuncConfigList.OptimizeAttackPriority, "0").Get(new EasySharpIni.Converters.IntConverter());
-            if (OptimizeAttackPriority == 0)
-                return;
-            string name = Traverse.Create(__instance).PropertyWithDecrypt("ID").GetValue<string>();
+            if (ZXEntityDefaultParamsIDGetter == null)
+            {
+                lock (typeof(GamePatch))
+                {
+                    if (ZXEntityDefaultParamsIDGetter == null)
+                    {
+                        ZXEntityDefaultParamsIDGetter = __instance.GetType().DelegateForGetPropertyValue("ID");
+                    }
+                }
+            }
+
+            //string name = Traverse.Create(__instance).PropertyWithDecrypt("ID").GetValue<string>();
+            string name = (string)ZXEntityDefaultParamsIDGetter(__instance);
             if (name == "ZombieVenom")
             {
                 if (bag.TryGetValue(System.Threading.Thread.CurrentThread.ManagedThreadId, out string value))
@@ -811,17 +792,11 @@ namespace TABHelperMod
 
         internal static void OnUpdateNearestEnemy()
         {
-            int OptimizeAttackPriority = ini.GetField(FuncConfigList.OptimizeAttackPriority, "0").Get(new EasySharpIni.Converters.IntConverter());
-            if (OptimizeAttackPriority == 0)
-                return;
             bag.TryRemove(System.Threading.Thread.CurrentThread.ManagedThreadId, out string value);
         }
 
         internal static void OnUpdateNearestEnemyPrefix()
         {
-            int OptimizeAttackPriority = ini.GetField(FuncConfigList.OptimizeAttackPriority, "0").Get(new EasySharpIni.Converters.IntConverter());
-            if (OptimizeAttackPriority == 0)
-                return;
             bag.TryAdd(System.Threading.Thread.CurrentThread.ManagedThreadId, "test");
         }
 
@@ -854,12 +829,6 @@ namespace TABHelperMod
         {
             try
             {
-                var OptimizeTrainingSequence = ini.GetField(FuncConfigList.OptimizeTrainingSequence, "1").Get(new IntConverter());
-                if (OptimizeTrainingSequence == 0)
-                {
-                    return true;
-                }
-
                 object cc = __args[0];
                 var ZXSystem_GameLevel_instance = __instance;
                 var Tag = Traverse.Create(cc).PropertyWithDecrypt("Tag").GetValue();
@@ -955,7 +924,7 @@ namespace TABHelperMod
                         {
                             break;
                         }
-                        
+
 
                         Traverse.Create(currentCommand).MethodWithDecrypt("Execute", new Type[] { zxentity.GetType(), target.GetType() }).GetValue(zxentity, target);
                         if (Traverse.Create(zxentity).MethodWithDecrypt("get_CBehaviour").GetValue() != null && Traverse.Create(currentCommand).PropertyWithDecrypt("ResetMemModesAfterSelectingTarget").GetValue<bool>())
@@ -981,11 +950,6 @@ namespace TABHelperMod
         {
             try
             {
-                if (ini.GetField(FuncConfigList.GameMenuEnhancer, "1").Get<int>(new IntConverter()) == 0)
-                {
-                    return true;
-                }
-
                 var methodW = Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem")).MethodWithDecrypt("W", new Type[] { typeof(string) });
                 Traverse Current = Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXGame")).MethodWithDecrypt("get_Current");
 
@@ -1093,10 +1057,6 @@ namespace TABHelperMod
 
         internal static bool OnGetIDResearchsRecentUnlocked(object __instance, ref List<string> __result)
         {
-            int CancelResearchAnytime = ini.GetField(FuncConfigList.CancelResearchAnytime, "0").Get<int>(new IntConverter());
-            if (CancelResearchAnytime == 0)
-                return true;
-
             var IDResearchUnlocked = Traverse.Create(__instance).PropertyWithDecrypt("IDResearchUnlocked").GetValue<List<string>>();
             List<string> result = new List<string>();
             foreach (var research in IDResearchUnlocked)
@@ -1105,6 +1065,25 @@ namespace TABHelperMod
             }
             __result = result;
             return false;
+        }
+
+        internal static bool OnSaveBackup()
+        {
+            return false;
+        }
+
+        internal static IEnumerable<CodeInstruction> OnCheckAutoBackup(IEnumerable<CodeInstruction> instructions)
+        {
+            List<CodeInstruction> newInstructions = new List<CodeInstruction>();
+            foreach (var instruction in instructions)
+            {
+                if (instruction.opcode == System.Reflection.Emit.OpCodes.Ldc_I4 && (int)instruction.operand == 1200000)
+                {
+                    instruction.operand = ModOptions.Instance.AutoSaveInterval * 1000;
+                }
+                newInstructions.Add(instruction);
+            }
+            return newInstructions;
         }
     }
 }

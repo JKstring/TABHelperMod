@@ -10,6 +10,8 @@ using TABModLoader;
 using TABModLoader.Utils;
 using Fasterflect;
 using static TABModLoader.Utils.Decryptor;
+using System.Reflection.Emit;
+using ZX.Components;
 
 namespace TABHelperMod
 {
@@ -118,15 +120,15 @@ namespace TABHelperMod
             }
         }
 
-
-        static bool displayAllLifeMeters = false;
-        internal static void OnGetDisplayAllLifeMeters(ref bool __result)
+        enum DisplayAllLifeMetersType
         {
-            if (displayAllLifeMeters)
-            {
-                __result = true;
-            }
+            None,
+            All,
+            Player,
+            Zombie
         }
+
+        static DisplayAllLifeMetersType displayAllLifeMetersType = DisplayAllLifeMetersType.None;
 
         internal static void OnKeyUp(DXGame __instance, DXKeys key)
         {
@@ -138,10 +140,30 @@ namespace TABHelperMod
                     {
                         return;
                     }
+                    string message = "";
+                    if (displayAllLifeMetersType == DisplayAllLifeMetersType.None)
+                    {
+                        displayAllLifeMetersType = DisplayAllLifeMetersType.All;
+                        message = "Display All Life Meters: All";
+                    }
+                    else if (displayAllLifeMetersType == DisplayAllLifeMetersType.All)
+                    {
+                        displayAllLifeMetersType = DisplayAllLifeMetersType.Player;
+                        message = "Display All Life Meters: Player";
+                    }
+                    else if (displayAllLifeMetersType == DisplayAllLifeMetersType.Player)
+                    {
+                        displayAllLifeMetersType = DisplayAllLifeMetersType.Zombie;
+                        message = "Display All Life Meters: Zombie";
+                    }
+                    else if (displayAllLifeMetersType == DisplayAllLifeMetersType.Zombie)
+                    {
+                        displayAllLifeMetersType = DisplayAllLifeMetersType.None;
+                        message = "Display All Life Meters: Default";
+                    }
 
-                    displayAllLifeMeters = !displayAllLifeMeters;
                     var ZXSystem_GameLevelType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
-                    Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("ShowMessage", new Type[] { typeof(string), typeof(System.Drawing.Color), typeof(int) }).GetValue("KeepDisplayAllLifeMeters: " + displayAllLifeMeters, System.Drawing.Color.White, 2000);
+                    Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("ShowMessage", new Type[] { typeof(string), typeof(System.Drawing.Color), typeof(int) }).GetValue(message, System.Drawing.Color.White, 2000);
                 }
                 else if (key == DXKeys.F)
                 {
@@ -584,220 +606,143 @@ namespace TABHelperMod
             Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel")).MethodWithDecrypt("get_Current").MethodWithDecrypt("UpdateSelection").GetValue();
         }
 
+        static Type TravelType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.Travel");
+        static Type ZXEntityType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.ZXEntity");
+        static Type CSelectableType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CSelectable");
+        static Type CUnitsHolderType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CUnitsHolder");
+        static Type ZXSystem_GameLevel = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
         private static void AutoGoWatchTower()
         {
-            System.Threading.Tasks.Task.Run(() =>
+            var ZXEntity_CurrentEntitySelected = Traverse.Create(CSelectableType).MethodWithDecrypt("get_CurrentEntitySelected").GetValue();
+            if (ZXEntity_CurrentEntitySelected == null)
             {
-                var CSelectableType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CSelectable");
-                var ZXEntity_CurrentEntitySelected = Traverse.Create(CSelectableType).MethodWithDecrypt("get_CurrentEntitySelected").GetValue();
-                if (ZXEntity_CurrentEntitySelected == null)
+                return;
+            }
+
+            if (Traverse.Create(ZXEntity_CurrentEntitySelected).PropertyWithDecrypt("Team").GetValue<ZX.ZXTeamType>() != ZX.ZXTeamType.Player)
+            {
+                return;
+            }
+
+            //if (DXGame.Current.Paused)
+            //{
+            //    return;
+            //}
+
+            var AllSelected = CSelectableType.GetFieldValue(D("AllSelected")).CallMethod("ToList").ConvertToList();
+            var AllHolder = DXGame.Current.ComponentsOfType(CUnitsHolderType);
+
+            var CommandableEntityType = HumanArmyUnitType;//AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.HumanArmyUnit");
+            var AllCommandableEntity = DXGame.Current.EntitiesOfType(CommandableEntityType);
+
+            Dictionary<DXEntity, int[]> holderUsedSlotCount = new Dictionary<DXEntity, int[]>();
+
+            //Count the remaining empty slots in the tower
+            foreach (var item in AllHolder)
+            {
+                var Enabled = Traverse.Create(item.Entity).PropertyWithDecrypt("Enabled").GetValue<bool>();
+                if (!Enabled)
+                    continue;
+                int NTotalSlots = Traverse.Create(item).PropertyWithDecrypt("NTotalSlots").GetValue<int>();
+                int NSlotsUsed = Traverse.Create(item).PropertyWithDecrypt("NSlotsUsed").GetValue<int>();
+                if (NSlotsUsed < NTotalSlots)
+                    holderUsedSlotCount.Add(item.Entity, new int[] { NTotalSlots, NSlotsUsed });
+            }
+            //Count whether there are units already on the way to the tower
+            foreach (var item in AllCommandableEntity)
+            {
+                var CCommandable = Traverse.Create(item).MethodWithDecrypt("get_CCommandable").GetValue<DXComponent>();
+                if (Traverse.Create(CCommandable).MethodWithDecrypt("get_Command").GetValue()?.GetType().FullName == "ZX.Commands.Travel")
                 {
-                    return;
-                }
-                if (Traverse.Create(ZXEntity_CurrentEntitySelected).PropertyWithDecrypt("Team").GetValue<ZX.ZXTeamType>() != ZX.ZXTeamType.Player)
-                {
-                    return;
-                }
-
-                var AllSelected = Traverse.Create(CSelectableType).FieldWithDecrypt("AllSelected").Method("ToList").GetValue<IEnumerable<object>>();
-
-                var CUnitsHolderType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CUnitsHolder");
-                var AllHolder = DXGame.Current.ComponentsOfType(CUnitsHolderType);
-
-                var CommandableEntityType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.HumanArmyUnit");
-                var AllCommandableEntity = DXGame.Current.EntitiesOfType(CommandableEntityType);
-
-                Dictionary<DXEntity, int[]> holderUsedSlotCount = new Dictionary<DXEntity, int[]>();
-
-                //Count the remaining empty slots in the tower
-                foreach (var item in AllHolder)
-                {
-                    var Enabled = Traverse.Create(item.Entity).PropertyWithDecrypt("Enabled").GetValue<bool>();
-                    if (!Enabled)
+                    var CCommandableTargetEntity = Traverse.Create(CCommandable).PropertyWithDecrypt("Target").FieldWithDecrypt("EntityRef").PropertyWithDecrypt("Entity").GetValue<DXEntity>();
+                    if (CCommandableTargetEntity == null)
                         continue;
-                    int NTotalSlots = Traverse.Create(item).PropertyWithDecrypt("NTotalSlots").GetValue<int>();
-                    int NSlotsUsed = Traverse.Create(item).PropertyWithDecrypt("NSlotsUsed").GetValue<int>();
-                    if (NSlotsUsed < NTotalSlots)
-                        holderUsedSlotCount.Add(item.Entity, new int[] { NTotalSlots, NSlotsUsed });
-                }
-
-                //Count whether there are units already on the way to the tower
-                foreach (var item in AllCommandableEntity)
-                {
-                    var CCommandable = Traverse.Create(item).MethodWithDecrypt("get_CCommandable").GetValue();
-                    if (Traverse.Create(CCommandable).MethodWithDecrypt("get_Command").GetValue()?.GetType().FullName == "ZX.Commands.Travel")
+                    var HasComponent = AccessToolsEX.MethodWithDecrypt(CCommandableTargetEntity.GetType(), "HasComponent", null, new Type[] { CUnitsHolderType });
+                    bool isHasComponent = (bool)HasComponent.Invoke(CCommandableTargetEntity, null);
+                    if (isHasComponent)
                     {
-                        var CCommandableTargetEntity = Traverse.Create(CCommandable).PropertyWithDecrypt("Target").FieldWithDecrypt("EntityRef").PropertyWithDecrypt("Entity").GetValue<DXEntity>();
-                        if (CCommandableTargetEntity == null)
+                        var TargetHolderEntity = CCommandableTargetEntity;
+                        if (TargetHolderEntity == null)
                             continue;
-                        var HasComponent = AccessToolsEX.MethodWithDecrypt(CCommandableTargetEntity.GetType(), "HasComponent", null, new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CUnitsHolder") });
-                        bool isHasComponent = (bool)HasComponent.Invoke(CCommandableTargetEntity, null);
-                        if (isHasComponent)
+                        if (holderUsedSlotCount.ContainsKey(TargetHolderEntity))
                         {
-                            var TargetHolderEntity = CCommandableTargetEntity;
-                            if (TargetHolderEntity == null)
-                                continue;
-                            if (holderUsedSlotCount.ContainsKey(TargetHolderEntity))
+                            holderUsedSlotCount[TargetHolderEntity][1] += 1;
+                            if (holderUsedSlotCount[TargetHolderEntity][1] >= holderUsedSlotCount[TargetHolderEntity][0])
                             {
-                                holderUsedSlotCount[TargetHolderEntity][1] += 1;
-                                if (holderUsedSlotCount[TargetHolderEntity][1] >= holderUsedSlotCount[TargetHolderEntity][0])
-                                {
-                                    holderUsedSlotCount.Remove(TargetHolderEntity);
-                                }
+                                holderUsedSlotCount.Remove(TargetHolderEntity);
+                                AllSelected.Remove(CCommandable);
                             }
                         }
                     }
                 }
+            }
 
-                var allSelectedList = AllSelected;
-                var orderByMethod = typeof(Enumerable).GetMethods()
-                    .First(m => m.Name == "OrderBy" && m.GetParameters().Length == 2)
-                    .MakeGenericMethod(typeof(object), typeof(float));
+            List<object> allSelectedList = AllSelected.ToList();
+            while (allSelectedList.Count > 0)
+            {
+                var current = (DXComponent)allSelectedList.First();
+                var currentEntity = current.Entity;
 
-                var orderedList = ((IEnumerable<object>)orderByMethod.Invoke(null, new object[]
+                var closetHolderWhere = holderUsedSlotCount.Where(x =>
                 {
-                        allSelectedList,
-                        new Func<object, float>(item =>
-                        {
-                            var cell = Traverse.Create(item).PropertyWithDecrypt("Entity").GetValue<DXEntity>().Cell;
-
-                            // Calculate the minimum distance to each tower
-                            float minDistanceToHolder = holderUsedSlotCount.Keys.Min(holder =>
-                            {
-                                var holderCell = holder.GetType().GetProperty("Cell").GetValue(holder);
-                                return cell.DistanceTo((System.Drawing.Point)holderCell);
-                            });
-                            return minDistanceToHolder; // Return distance to the nearest tower for sorting
-                        })
-                 })).ToList();
-
-                // Allocate units to the tower
-                foreach (var item in orderedList)
+                    var holderCell = x.Key.Position;
+                    var distance = currentEntity.Position.DistanceTo(holderCell);
+                    return distance <= ModOptions.Instance.AutoGoWatchTowerRadius;
+                });
+                if (!closetHolderWhere.Any())
                 {
-                    if (holderUsedSlotCount.Count == 0)
-                    {
-                        break;
-                    }
-                    DXEntity ItemEntity = Traverse.Create(item).PropertyWithDecrypt("Entity").GetValue<DXEntity>();
+                    allSelectedList.Remove(current);
+                    continue;
+                };
+                var closetHolder = closetHolderWhere.MinBy(x =>
+                {
+                    var holderCell = x.Key.Position;
+                    var distance = currentEntity.Position.DistanceTo(holderCell);
+                    return distance;
+                });
 
-                    // Check if the unit has the ability to ascend the tower
-                    bool CanEnterInBuildings = Traverse.Create(ItemEntity).MethodWithDecrypt("get_Params").PropertyWithDecrypt("CanEnterInBuildings").GetValue<bool>();
-                    if (!CanEnterInBuildings)
-                    {
-                        continue;
-                    }
+                var closetHolderLeftSlot = closetHolder.Value[0] - closetHolder.Value[1];
+                var closetHolderLeftSlotUnits = allSelectedList.Where(x =>
+                {
+                    var entity = ((DXComponent)x).Entity;
+                    var distance = closetHolder.Key.Position.DistanceTo(entity.Position);
+                    return distance <= ModOptions.Instance.AutoGoWatchTowerRadius;
+                }).OrderBy(x =>
+                {
+                    var entity = ((DXComponent)x).Entity;
+                    var distance = closetHolder.Key.Position.DistanceTo(entity.Position);
+                    return distance;
+                }).Take(closetHolderLeftSlot).ToList();
 
-                    var EntityCCommandable = Traverse.Create(ItemEntity).MethodWithDecrypt("get_CCommandable").GetValue();//((ZXEntity)(item.Entity)).get_CCommandable();
-                    if (Traverse.Create(EntityCCommandable).MethodWithDecrypt("get_Command").GetValue()?.GetType().FullName == "ZX.Commands.Travel")
-                    {
-                        var EntityCCommandableTargetEntity = Traverse.Create(EntityCCommandable).PropertyWithDecrypt("Target").FieldWithDecrypt("EntityRef").PropertyWithDecrypt("Entity").GetValue<DXEntity>();
-                        if (EntityCCommandableTargetEntity != null)
-                        {
-                            var HasComponent = AccessToolsEX.MethodWithDecrypt(EntityCCommandableTargetEntity.GetType(), "HasComponent", null, new Type[] { AccessTools.TypeByName("ZX.Components.CUnitsHolder") });
-                            bool isHasComponent = (bool)HasComponent.Invoke(EntityCCommandableTargetEntity, null);
-                            if (isHasComponent)
-                            {
-                                continue;
-                            }
-                        }
-                    }
+                if (closetHolderLeftSlotUnits.Count == 0)
+                    allSelectedList.Remove(current);//can not find any unit in the radius of the tower, remove it from the list
 
-
-                    // Find the closest tower based on distance
-                    var Cell = Traverse.Create(ItemEntity).Property("Cell").GetValue<System.Drawing.Point>();
-
-                    DXEntity nearestHolder = null;
-                    float minDistance = float.MaxValue;
-                    float radius = ModOptions.Instance.AutoGoWatchTowerRadius;
-
-                    foreach (var holder in holderUsedSlotCount.Keys)
-                    {
-                        var holderCell = holder.Cell;
-                        var distance = Cell.DistanceTo(holderCell);
-                        if (distance < radius && distance < minDistance)
-                        {
-                            minDistance = distance;
-                            nearestHolder = holder;
-                        }
-                    }
-
-                    if (nearestHolder == null)
-                    {//No tower found in the current unit for ascending
-                        continue;
-                    }
-
-                    //Set up the command for the current unit
-                    var ZXCommandType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommand");
-                    var GetMethon = AccessToolsEX.MethodWithDecrypt(ZXCommandType, "Get", generics: new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.Travel") });
-                    var TravelCommand = GetMethon.Invoke(null, null);
-                    var ZXCommandTargetType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommandTarget");
-                    var TargetHolder = nearestHolder;
+                // alloc the units to the closetHolder
+                foreach (var item in closetHolderLeftSlotUnits)
+                {
+                    var unity = ((DXComponent)item).Entity;
+                    var TravelCommand = ZXCommandType.CallMethod(new Type[] { TravelType }, D("Get"));
+                    var TargetHolder = closetHolder.Key;
                     var TargetHolderPosition = TargetHolder.Position;
-                    var Target = AccessToolsEX.CreateInstance(ZXCommandTargetType, new object[] { TargetHolder });
-                    Traverse.Create(Target).FieldWithDecrypt("Position").SetValue(TargetHolderPosition);
-                    Traverse.Create(TravelCommand).FieldWithDecrypt("_Target").SetValue(Target);
-                    Traverse.Create(EntityCCommandable).MethodWithDecrypt("set_Command", new Type[] { ZXCommandType }).GetValue(TravelCommand);
-                    Traverse.Create(TravelCommand).MethodWithDecrypt("Execute", new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.ZXEntity"), ZXCommandTargetType }).GetValue(ItemEntity, Target);
-
+                    var Target = ZXCommandTargetType.CreateInstance(new object[] { TargetHolder });
+                    Target = Target.WrapIfValueType();
+                    Target.SetFieldValue(D("Position"), TargetHolderPosition);
+                    Target = Target.UnwrapIfWrapped();
+                    TravelCommand.CallMethod(D("Execute"), unity, Target);
                     // Update tower vacancy statistics
-                    holderUsedSlotCount[nearestHolder][1] += 1;
-                    if (holderUsedSlotCount[nearestHolder][1] >= holderUsedSlotCount[nearestHolder][0])
+                    holderUsedSlotCount[closetHolder.Key][1] += 1;
+                    if (holderUsedSlotCount[closetHolder.Key][1] >= holderUsedSlotCount[closetHolder.Key][0])
                     {
-                        holderUsedSlotCount.Remove(nearestHolder);
+                        holderUsedSlotCount.Remove(closetHolder.Key);
                     }
 
                     // Set the target's selection status to false to avoid repeated tower placement
-                    var ItemEntityCSelectable = AccessToolsEX.MethodWithDecrypt(ItemEntity.GetType(), "GetComponent", generics: new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CSelectable") }).Invoke(ItemEntity, null);
-                    Traverse.Create(ItemEntityCSelectable).PropertyWithDecrypt("Selected").SetValue(false);
-
-                    Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel")).MethodWithDecrypt("get_Current").MethodWithDecrypt("PlaySelectionSound").GetValue();
-                    Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel")).MethodWithDecrypt("get_Current").MethodWithDecrypt("UpdateSelection").GetValue();
-                }
-
-            });
-        }
-
-        static internal MemberGetter ZXEntityDefaultParamsIDGetter;
-        internal static void OnGetPower(object __instance, ref int __result)
-        {
-            if (ZXEntityDefaultParamsIDGetter == null)
-            {
-                lock (typeof(GamePatch))
-                {
-                    if (ZXEntityDefaultParamsIDGetter == null)
-                    {
-                        ZXEntityDefaultParamsIDGetter = __instance.GetType().DelegateForGetPropertyValue("ID");
-                    }
+                    item.SetPropertyValue(D("Selected"), false);
+                    allSelectedList.Remove(item);
                 }
             }
-
-            //string name = Traverse.Create(__instance).PropertyWithDecrypt("ID").GetValue<string>();
-            string name = (string)ZXEntityDefaultParamsIDGetter(__instance);
-            if (name == "ZombieVenom")
-            {
-                if (bag.TryGetValue(System.Threading.Thread.CurrentThread.ManagedThreadId, out string value))
-                {
-                    __result += 1;
-                }
-            }
-            return;
-        }
-
-        static internal List<int> ThreadIdList = new List<int>();
-        static internal System.Collections.Concurrent.ConcurrentDictionary<int, string> bag = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
-        internal static void OnShowStartGameMenu()
-        {
-            bag.Clear();
-        }
-
-        internal static void OnUpdateNearestEnemy()
-        {
-            bag.TryRemove(System.Threading.Thread.CurrentThread.ManagedThreadId, out string value);
-        }
-
-        internal static void OnUpdateNearestEnemyPrefix()
-        {
-            bag.TryAdd(System.Threading.Thread.CurrentThread.ManagedThreadId, "test");
+            Traverse.Create(ZXSystem_GameLevel).MethodWithDecrypt("get_Current").MethodWithDecrypt("PlaySelectionSound").GetValue();
+            Traverse.Create(ZXSystem_GameLevel).MethodWithDecrypt("get_Current").MethodWithDecrypt("UpdateSelection").GetValue();
         }
 
         static internal double GameSpeed = 1.0;
@@ -925,6 +870,13 @@ namespace TABHelperMod
                             break;
                         }
 
+                        //Every time it is necessary to judge whether the output is sufficient for production
+                        bool IsAvailableCommand = (bool)zxentity.CallMethod(D("get_CCommandable")).GetPropertyValue(D("AvailableCommands")).CallMethod(D("Contains"), currentCommand);
+                        bool IsEnabled = (bool)currentCommand.CallMethod(D("IsEnabledFor"), zxentity);
+                        if (!IsAvailableCommand || !IsEnabled)
+                        {
+                            continue;
+                        }
 
                         Traverse.Create(currentCommand).MethodWithDecrypt("Execute", new Type[] { zxentity.GetType(), target.GetType() }).GetValue(zxentity, target);
                         if (Traverse.Create(zxentity).MethodWithDecrypt("get_CBehaviour").GetValue() != null && Traverse.Create(currentCommand).PropertyWithDecrypt("ResetMemModesAfterSelectingTarget").GetValue<bool>())
@@ -1023,8 +975,60 @@ namespace TABHelperMod
                 dxgridLayout.AddRow(new DXVision.DXObject[] { zxbuttonLink6 });
                 zxbuttonLink6.Activated += delegate (DXVision.GUI.DXButton s)
                 {
+
+
+
                     string name = Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXGameState")).MethodWithDecrypt("get_Current").PropertyWithDecrypt("Name").GetValue<string>();
-                    Current.MethodWithDecrypt("SaveGame", new Type[] { typeof(string), typeof(Action), typeof(bool), typeof(bool) }).GetValue(name, null, true, true);
+
+                    var ZXGameType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXGame");
+                    var savePath = (string)ZXGameType.CallMethod(D("get_SaveGameFolder"));
+                    var saveFile = System.IO.Path.Combine(savePath, name + ".zxsav");
+
+
+                    string GetAvailableSaveSlots(string filename)
+                    {
+                        if (!System.IO.File.Exists(saveFile))
+                        {
+                            return saveFile;
+                        }
+
+
+                        //判断备份存档是否到达最大数量
+                        if (ModOptions.Instance.MaxSaveBackup == 0)
+                        {
+                            return name;
+                        }
+
+                        //查找目录所有符合名字的存档,按照最后修改时间升序排序
+                        string[] files = System.IO.Directory.GetFiles(savePath, name + "_*.zxsav").OrderBy(x => System.IO.File.GetLastWriteTime(x)).ToArray();
+                        if (files.Length >= ModOptions.Instance.MaxSaveBackup)
+                        {
+                            //删除所有超过或等于最大数量的备份,给新存档留出空间
+                            for (int i = 0; i <= files.Length - ModOptions.Instance.MaxSaveBackup; i++)
+                            {
+                                System.IO.File.Delete(files[i]);
+                                var zxcheckFilename = files[i].Replace(".zxsav", ".zxcheck");
+                                if (System.IO.File.Exists(zxcheckFilename))
+                                {
+                                    System.IO.File.Delete(zxcheckFilename);
+                                }
+                            }
+                        }
+
+                        //返回新的存档名,名字规则为name+-年-月-日-时-分-秒
+                        string time = DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss");
+
+                        //返回新的存档名,名字规则为name+年y月m日d时H时M分S秒,标注是年月日时分秒
+                        //string time = DateTime.Now.ToString("yyyyyMMddHHmmss");
+
+                        return name + "_" + time + ".zxsav";
+                    }
+
+                    //判断存档是否存在
+                    var newfilename = GetAvailableSaveSlots(saveFile);
+
+                    //Current.MethodWithDecrypt("SaveGame", new Type[] { typeof(string), typeof(Action), typeof(bool), typeof(bool) }).GetValue(name, null, true, true);
+                    Current.MethodWithDecrypt("SaveGame", new Type[] { typeof(string), typeof(Action), typeof(bool), typeof(bool) }).GetValue(newfilename, null, true, true);
                     //重置自动保存时间
                     Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel")).MethodWithDecrypt("get_Current").FieldWithDecrypt("_LastAutoBackupTime").SetValue(DXVision.DXScene.Current.VirtualTimeInt);
                 };
@@ -1067,6 +1071,13 @@ namespace TABHelperMod
             return false;
         }
 
+        internal static bool OnGetHeroPerksTakenNow(object __instance, ref List<string> __result)
+        {
+            var result = ((List<string>)__instance.GetPropertyValue(D("HeroPerksTaken"))).ToList();
+            __result = result;
+            return false;
+        }
+
         internal static bool OnSaveBackup()
         {
             return false;
@@ -1083,6 +1094,247 @@ namespace TABHelperMod
                 }
                 newInstructions.Add(instruction);
             }
+            return newInstructions;
+        }
+
+        //public static void OnDeleteSaveGames(object[] __args)
+        //{
+        //    string name = (string)__args[0];
+        //    var savePath = (string)AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXGame").CallMethod(D("get_SaveGameFolder"));
+
+
+        //    //删除所有符合名字的存档,名称格式为年-月-日 时.分.秒
+        //    string[] files = System.IO.Directory.GetFiles(savePath, name + "_*.zxsav").OrderBy(x => System.IO.File.GetLastWriteTime(x)).ToArray();
+        //    for (int i = 0; i <= files.Length; i++)
+        //    {
+        //        System.IO.File.Delete(files[i]);
+        //        var zxcheckFilename = files[i].Replace(".zxsav", ".zxcheck");
+        //        if (System.IO.File.Exists(zxcheckFilename))
+        //        {
+        //            System.IO.File.Delete(zxcheckFilename);
+        //        }
+        //    }
+        //}
+
+        public static IEnumerable<CodeInstruction> DeleteSaveGamesTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            //remove catch where
+            var code = new List<CodeInstruction>(instructions);
+            var newInstructions = new List<CodeInstruction>();
+            for (int i = 0; i < code.Count; i++)
+            {
+                if (i >= 58 && i <= 67)
+                {
+                    continue;
+                }
+                newInstructions.Add(code[i]);
+            }
+            return newInstructions;
+        }
+
+        public static void OnDeleteSaveGames(object __instance, object[] __args)
+        {
+            var name = __args[0] as string;
+            var type = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXGame");
+            string savePath = type.CallMethod(D("get_SaveGameFolder")) as string;
+
+            //删除备份存档
+            string[] files = System.IO.Directory.GetFiles(savePath, name + "_*.zxsav").OrderBy(x => System.IO.File.GetLastWriteTime(x)).ToArray();
+            for (int i = 0; i < files.Length; i++)
+            {
+                System.IO.File.Delete(files[i]);
+                var zxcheckFilename = files[i].Replace(".zxsav", ".zxcheck");
+                if (System.IO.File.Exists(zxcheckFilename))
+                {
+                    System.IO.File.Delete(zxcheckFilename);
+                }
+            }
+        }
+
+        internal static bool OnCorrectSelection(object __instance)
+        {
+            if ((bool)__instance.GetPropertyValue(D("SelectingTargetForCommand")))
+            {
+                return true;
+            }
+            var _OSelectorByArea = ((DXSelectorByArea)__instance.GetFieldValue(D("_OSelectorByArea")));
+            _OSelectorByArea.Hide();
+            if (((DXScene)__instance.GetPropertyValue(D("Scene"))).RootObject.ObjectAreaToObjectArea(_OSelectorByArea, _OSelectorByArea.InnerArea, false).Size.GetMaxDimension() < 1f)
+            {
+                return true;
+            }
+
+            var list = __instance.CallMethod(D("GetSelectablesInSelectionArea")).ConvertToList();
+
+            if (DXInputState.Current.IsKeyPressed(DXKeys.Shift, false))
+            {
+                using (List<object>.Enumerator enumerator = list.GetEnumerator())
+                {
+                    while (enumerator.MoveNext())
+                    {
+                        var cselectable = enumerator.Current;
+                        cselectable.SetPropertyValue(D("Selected"), true);
+                    }
+                }
+            }
+            else if (DXInputState.Current.IsKeyPressed(DXKeys.Control, false))
+            {
+                var type = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CSelectable");
+                //ZX.Entities.ZXEntity ZX.Components.CSelectable::get_CurrentEntitySelected()
+                var currentEntitySelected = type.CallMethod(D("get_CurrentEntitySelected"));
+                if (currentEntitySelected == null)
+                {
+                    return true;
+                }
+                foreach (var cselectable in list)
+                {
+                    var Entity = cselectable.GetPropertyValue(D("Entity"));
+                    if (Entity.GetType() == currentEntitySelected.GetType())
+                    {
+                        cselectable.SetPropertyValue(D("Selected"), true);
+                    }
+                }
+            }
+            else
+            {
+                var type = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CSelectable");
+                type.CallMethod(D("UnSelectAll"));
+                foreach (var cselectable in list)
+                {
+                    cselectable.SetPropertyValue(D("Selected"), true);
+                }
+            }
+
+            __instance.CallMethod(D("CorrectSelection"));
+            __instance.CallMethod(D("UpdateSelection"));
+
+            {
+                var type = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
+                type.CallMethod(D("get_Current")).CallMethod(D("PlaySelectionSound"));
+            }
+
+            return false;
+        }
+
+
+        static Fasterflect.MethodInvoker ParamsDelegate = null;
+        static Fasterflect.MemberGetter PowerGetter = null;
+        static Func<DXEntity, DXEntity, int> GetStrongestFuncCache = null;
+        static internal MemberGetter ZXEntityDefaultParamsIDGetter;
+        public static Func<DXEntity, DXEntity, int> GetStrongestFunc(DXComponent __instance)
+        {
+            if (GetStrongestFuncCache == null)
+            {
+                lock (typeof(GamePatch))
+                {
+                    if (GetStrongestFuncCache == null)
+                    {
+                        var cell = ((DXComponent)__instance).Entity.Cell;
+                        //ZX.Entities.ZXEntity
+                        if (ParamsDelegate == null)
+                        {
+                            ParamsDelegate = AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.ZXEntity").DelegateForCallMethod(D("get_Params"));
+
+                            var ZXEntityDefaultParamsType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXEntityDefaultParams");
+                            PowerGetter = ZXEntityDefaultParamsType.DelegateForGetPropertyValue(D("Power"));
+                            ZXEntityDefaultParamsIDGetter = ZXEntityDefaultParamsType.DelegateForGetPropertyValue("ID");
+
+                        }
+
+                        GetStrongestFuncCache = new Func<DXEntity, DXEntity, int>((a, b) =>
+                        {
+                            var aParams = ParamsDelegate(a);
+                            var bParams = ParamsDelegate(b);
+
+                            var aPower = (int)PowerGetter(aParams);
+                            var bPower = (int)PowerGetter(bParams);
+
+                            string name = (string)ZXEntityDefaultParamsIDGetter(aParams);
+                            if (name == "ZombieVenom")
+                            {
+                                aPower += 1;
+                            }
+
+                            name = (string)ZXEntityDefaultParamsIDGetter(bParams);
+                            if (name == "ZombieVenom")
+                            {
+                                bPower += 1;
+                            }
+
+                            return (bPower - aPower) * 10000 + a.Cell.DistanceFast(cell) - b.Cell.DistanceFast(cell);
+                        });
+                    }
+                }
+            }
+            return GetStrongestFuncCache;
+        }
+
+        private static object UpdateNearestEnemyLock = new object();
+        private static IEnumerable<CodeInstruction> UpdateNearestEnemyTranspilerCache = null;
+        internal static IEnumerable<CodeInstruction> OnUpdateNearestEnemyTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            if (UpdateNearestEnemyTranspilerCache == null)
+            {
+                var newInstructions = new List<CodeInstruction>();
+                for (int i = 0; i < instructions.Count(); i++)
+                {
+                    var instruction = instructions.ElementAt(i);
+                    if (i > 157 && i <= 159)
+                    {
+                        continue;
+                    }
+                    else if (i == 157)
+                    {
+                        newInstructions.Add(new CodeInstruction(OpCodes.Ldarg_0));
+                        newInstructions.Add(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(GamePatch), nameof(GetStrongestFunc))));
+                        continue;
+                    }
+                    newInstructions.Add(instruction);
+                }
+                UpdateNearestEnemyTranspilerCache = newInstructions;
+            }
+            return UpdateNearestEnemyTranspilerCache;
+        }
+
+        static MemberGetter TeamGetter = AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.ZXEntity").DelegateForGetPropertyValue(D("Team"));
+        public static bool CheckShowHealthBar(DXComponent clife)
+        {
+            if (displayAllLifeMetersType == DisplayAllLifeMetersType.All)
+                return true;
+            if (displayAllLifeMetersType == DisplayAllLifeMetersType.None)
+                return false;
+
+            var team = (ZX.ZXTeamType)TeamGetter(clife.Entity);
+            if (team == ZX.ZXTeamType.Player && displayAllLifeMetersType == DisplayAllLifeMetersType.Player)
+            {
+                return true;
+            }
+            else if (team == ZX.ZXTeamType.Zombie && displayAllLifeMetersType == DisplayAllLifeMetersType.Zombie)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        internal static IEnumerable<CodeInstruction> OnUpdateSceneObjectParallel(IEnumerable<CodeInstruction> instructions)
+        {
+            var newInstructions = new List<CodeInstruction>();
+            var source = instructions.ToList();
+            var showHealthBarLabel = source[18].labels.First();
+
+            for (int i = 0; i < instructions.Count(); i++)
+            {
+                var instruction = instructions.ElementAt(i);
+                if (i == 16)
+                {
+                    newInstructions.Add(new CodeInstruction(OpCodes.Ldarg_0));
+                    newInstructions.Add(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(GamePatch), nameof(CheckShowHealthBar))));
+                    newInstructions.Add(new CodeInstruction(OpCodes.Brtrue, showHealthBarLabel));
+                }
+
+                newInstructions.Add(instruction);
+            }
+
             return newInstructions;
         }
     }

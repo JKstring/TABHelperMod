@@ -27,7 +27,10 @@ namespace TABHelperMod
             OptimizeAttackPriority,
             CancelResearchAnytime,
             DisableAutoSave,
-            AutoSaveInterval
+            AutoSaveInterval,
+            MaxSaveBackup,
+            AutoDeleteBackups,
+            EnhancedSelection
         }
         public bool KeepDisplayAllLifeMeters { get; set; } = true;
         public bool AutoGoWatchTower { get; set; } = true;
@@ -45,6 +48,9 @@ namespace TABHelperMod
         public bool CancelResearchAnytime { get; set; } = false;
         public bool DisableAutoSave { get; set; } = false;
         public int AutoSaveInterval { get; set; } = 1200;
+        public int MaxSaveBackup { get; set; } = 5;
+        public bool AutoDeleteBackups { get; set; } = true;
+        public bool EnhancedSelection { get; set; } = true;
 
         public static ModOptions Instance { get; } = new ModOptions();
         private bool IsLoaded = false;
@@ -83,6 +89,9 @@ namespace TABHelperMod
             ini.AddField("CancelResearchAnytime", "false", "false");
             ini.AddField("DisableAutoSave", "false", "false");
             ini.AddField("AutoSaveInterval", "1200", "1200");
+            ini.AddField("MaxSaveBackup", "5", "5");
+            ini.AddField("AutoDeleteBackups", "true", "true");
+            ini.AddField("EnhancedSelection", "true", "true");
             if (!System.IO.File.Exists(path))
             {
                 ini.Write();
@@ -117,6 +126,9 @@ namespace TABHelperMod
             CancelResearchAnytime = bool.Parse(ini.GetField("CancelResearchAnytime", "false").Get());
             DisableAutoSave = bool.Parse(ini.GetField("DisableAutoSave", "false").Get());
             AutoSaveInterval = int.Parse(ini.GetField("AutoSaveInterval", "1200").Get());
+            MaxSaveBackup = int.Parse(ini.GetField("MaxSaveBackup", "5").Get());
+            AutoDeleteBackups = bool.Parse(ini.GetField("AutoDeleteBackups", "true").Get());
+            EnhancedSelection = bool.Parse(ini.GetField("EnhancedSelection", "true").Get());
         }
     }
 }

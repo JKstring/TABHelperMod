@@ -30,7 +30,10 @@ namespace TABHelperMod
             AutoSaveInterval,
             MaxSaveBackup,
             AutoDeleteBackups,
-            EnhancedSelection
+            EnhancedSelection,
+            DeselectUnitsAfterTowerSearch,
+            BatchCancelCommand,
+            QuickBuyResource
         }
         public bool KeepDisplayAllLifeMeters { get; set; } = true;
         public bool AutoGoWatchTower { get; set; } = true;
@@ -51,6 +54,9 @@ namespace TABHelperMod
         public int MaxSaveBackup { get; set; } = 5;
         public bool AutoDeleteBackups { get; set; } = true;
         public bool EnhancedSelection { get; set; } = true;
+        public bool DeselectUnitsAfterTowerSearch { get; set; } = true;
+        public bool BatchCancelCommand { get; set; } = true;
+        public bool QuickBuyResource { get; set; } = true;
 
         public static ModOptions Instance { get; } = new ModOptions();
         private bool IsLoaded = false;
@@ -92,6 +98,9 @@ namespace TABHelperMod
             ini.AddField("MaxSaveBackup", "5", "5");
             ini.AddField("AutoDeleteBackups", "true", "true");
             ini.AddField("EnhancedSelection", "true", "true");
+            ini.AddField("DeselectUnitsAfterTowerSearch", "true", "true");
+            ini.AddField("BatchCancelCommand", "true", "true");
+            ini.AddField("QuickBuyResource", "true", "true");
             if (!System.IO.File.Exists(path))
             {
                 ini.Write();
@@ -129,6 +138,9 @@ namespace TABHelperMod
             MaxSaveBackup = int.Parse(ini.GetField("MaxSaveBackup", "5").Get());
             AutoDeleteBackups = bool.Parse(ini.GetField("AutoDeleteBackups", "true").Get());
             EnhancedSelection = bool.Parse(ini.GetField("EnhancedSelection", "true").Get());
+            DeselectUnitsAfterTowerSearch = bool.Parse(ini.GetField("DeselectUnitsAfterTowerSearch", "true").Get());
+            BatchCancelCommand = bool.Parse(ini.GetField("BatchCancelCommand", "true").Get());
+            QuickBuyResource = bool.Parse(ini.GetField("QuickBuyResource", "true").Get());
         }
     }
 }

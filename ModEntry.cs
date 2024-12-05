@@ -32,12 +32,6 @@ namespace TABHelperMod
                 if (ModOptions.Instance.KeepDisplayAllLifeMeters)
                 {
                     //DisplayAllLifeMeters
-                    //type = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CLife");
-                    //originalMethod = AccessToolsEX.MethodWithDecrypt(type, "get_DisplayAllLifeMeters");
-                    //postfixMethod = new HarmonyMethod(AccessTools.Method(typeof(GamePatch), nameof(GamePatch.OnGetDisplayAllLifeMeters)));
-                    //harmonyInstance.Patch(originalMethod, postfix: postfixMethod);
-
-                    //DisplayAllLifeMeters
                     //System.Void ZX.Components.CLife::OnUpdateSceneObjectParallel()
                     type = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CLife");
                     originalMethod = AccessToolsEX.MethodWithDecrypt(type, "OnUpdateSceneObjectParallel");
@@ -138,11 +132,27 @@ namespace TABHelperMod
 
                 if (ModOptions.Instance.EnhancedSelection)
                 {
-                    //System.Void ZX.ZXSystem_GameLevel::_OWorld_MouseDragFinish(DXVision.DXObject,System.Drawing.Point)
                     type = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
                     originalMethod = AccessToolsEX.MethodWithDecrypt(type, "_OWorld_MouseDragFinish", new Type[] { typeof(DXObject), typeof(System.Drawing.Point) });
                     postfixMethod = new HarmonyMethod(AccessTools.Method(typeof(GamePatch), nameof(GamePatch.OnCorrectSelection)));
                     harmonyInstance.Patch(originalMethod, prefix: postfixMethod);
+                }
+
+                if (ModOptions.Instance.QuickBuyResource)
+                {
+                    //QuickBuyResource
+                    //ZX.Commands.TradeCommand::OnExecute(ZX.Entities.ZXEntity,ZX.Commands.ZXCommandTarget)
+                    List<string> TradeCommand = new List<string>() { "BuyIron", "BuyOil", "BuyStone", "BuyWood", "SellIron", "SellOil", "SellStone", "SellWood" };
+                    var ZXEntityType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.ZXEntity");
+                    var ZXCommandTargetType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommandTarget");
+                    foreach (string command in TradeCommand)
+                    {
+                        type = AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands." + command);
+                        originalMethod = AccessToolsEX.MethodWithDecrypt(type, "OnExecute", new Type[] { ZXEntityType, ZXCommandTargetType });
+                        postfixMethod = new HarmonyMethod(AccessTools.Method(typeof(GamePatch), nameof(GamePatch.OnTradeCommandExecuted)));
+                        harmonyInstance.Patch(originalMethod, postfix: postfixMethod);
+                    }
+
                 }
 
             }

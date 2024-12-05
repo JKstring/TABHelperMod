@@ -11,7 +11,7 @@ using TABModLoader.Utils;
 using Fasterflect;
 using static TABModLoader.Utils.Decryptor;
 using System.Reflection.Emit;
-using ZX.Components;
+using ZX.Entities;
 
 namespace TABHelperMod
 {
@@ -68,17 +68,13 @@ namespace TABHelperMod
                         CCommandable.SetPropertyValue(D("Target"), ZXCommandTarget);
 
                         var AttackCommand = AttackCommandGetMethon.Invoke(null, null);
-
                         //Traverse.Create(actor).MethodWithDecrypt("get_CCommandable").MethodWithDecrypt("set_Command", new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommand") }).GetValue(AttackCommand);
                         CCommandable.CallMethod(D("set_Command"), AttackCommand);
-
                         //Traverse.Create(AttackCommand).MethodWithDecrypt("Execute", new Type[] { AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.ZXEntity"), AccessToolsEX.TypeByNameWithDecrypt("ZX.Commands.ZXCommandTarget") }).GetValue(actor, ZXCommandTarget);
                         AttackCommand.CallMethod(D("Execute"), actor, target);
 
-
                         //Traverse.Create(CCommandable).MethodWithDecrypt("CancellAllCommandsQueued").GetValue();
                         CCommandable.CallMethod(D("CancellAllCommandsQueued"));
-
                         //var OrdersQueued = Traverse.Create(CCommandable).PropertyWithDecrypt("OrdersQueued").GetValue();
                         var OrdersQueued = CCommandable.GetPropertyValue(D("OrdersQueued"));
                         if (OrdersQueued == null)
@@ -89,6 +85,7 @@ namespace TABHelperMod
                             CCommandable.SetPropertyValue(D("OrdersQueued"), list);
                         }
                         //var count = Traverse.Create(CCommandable).PropertyWithDecrypt("OrdersQueued").Property("Count").GetValue<int>();
+                        OrdersQueued = CCommandable.GetPropertyValue(D("OrdersQueued"));
                         var count = (int)OrdersQueued.GetPropertyValue("Count");
                         if (count == 0)
                         {
@@ -492,10 +489,95 @@ namespace TABHelperMod
                         Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.GUI.ZXMessageBox")).MethodWithDecrypt("AskYesNo", new Type[] { typeof(string), typeof(string), typeof(Action), typeof(Action) }).GetValue(title, description, onYes, onNo);
                     }
                 }
+                else if (key == DXKeys.N)
+                {
+                    if (!ModOptions.Instance.BatchCancelCommand)
+                    {
+                        return;
+                    }
+                    GamePatch.BatchCancelCommand();
+                }
             }
             catch (Exception e)
             {
                 Debug.Log(e.ToString());
+            }
+        }
+        private static void BatchCancelCommand()
+        {
+            var ZXEntity_CurrentEntitySelected = Traverse.Create(CSelectableType).MethodWithDecrypt("get_CurrentEntitySelected").GetValue();
+            if (ZXEntity_CurrentEntitySelected == null)
+            {
+                return;
+            }
+            if (Traverse.Create(ZXEntity_CurrentEntitySelected).PropertyWithDecrypt("Team").GetValue<ZX.ZXTeamType>() != ZX.ZXTeamType.Player)
+            {
+                return;
+            }
+
+            //check if the unit is a building
+            //ZX.Entities.Structure
+            var checkType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.Structure");
+            bool isBuilding = ZXEntity_CurrentEntitySelected.GetType().IsSubclassOf(checkType);
+            if (!isBuilding)
+                return;
+
+            var AllSelected = Traverse.Create(CSelectableType).FieldWithDecrypt("AllSelected").GetValue();
+            var AllSelectedList = AllSelected.CallMethod("ToList").ConvertToList();
+
+            bool ControlPressed = DXInputState.Current.IsKeyPressed(DXKeys.Control);
+            bool ShiftPressed = DXInputState.Current.IsKeyPressed(DXKeys.Shift);
+            foreach (var item in AllSelectedList)
+            {
+                var cselectable = item as DXComponent;
+                var entity = cselectable.Entity;
+                var CCommandable = entity.CallMethod(D("get_CCommandable"));
+                if (CCommandable == null)
+                    continue;
+
+                if (ShiftPressed)
+                {
+                    var OrdersQueued = CCommandable.GetPropertyValue(D("OrdersQueued"));
+                    if (OrdersQueued != null)
+                    {
+                        var OrdersQueuedCount = (int)OrdersQueued.GetPropertyValue(D("Count"));
+                        if (OrdersQueuedCount > 0)
+                        {
+                            for (int i = OrdersQueuedCount - 1; i >= 0; i--)
+                            {
+                                CCommandable.CallMethod(D("CancelCommandQueued"), i);
+                            }
+                        }
+                    }
+                }
+
+                //check ctrl is pressed
+                if (ControlPressed)
+                {
+                    CCommandable.CallMethod(D("CancelCurrentCommand"));
+                    continue;
+                }
+                else
+                {
+                    var OrdersQueued = CCommandable.GetPropertyValue(D("OrdersQueued"));
+                    if (OrdersQueued == null)
+                    {
+                        CCommandable.CallMethod(D("CancelCurrentCommand"));
+                        continue;
+                    }
+                    var OrdersQueuedCount = (int)OrdersQueued.GetPropertyValue(D("Count"));
+                    if (OrdersQueuedCount == 0)
+                    {
+                        CCommandable.CallMethod(D("CancelCurrentCommand"));
+                        continue;
+                    }
+                    else
+                    {
+                        CCommandable.CallMethod(D("CancelCommandQueued"), OrdersQueuedCount - 1);
+                        continue;
+                    }
+                }
+                //cancel last order
             }
         }
 
@@ -513,31 +595,33 @@ namespace TABHelperMod
             }
 
             var AllSelected = Traverse.Create(CSelectableType).FieldWithDecrypt("AllSelected").GetValue();
-            dynamic AllSelectedList = Traverse.Create(AllSelected).MethodWithDecrypt("ToList").GetValue();
-            foreach (var cselectable in AllSelectedList)
+            var AllSelectedList = AllSelected.CallMethod("ToList").ConvertToList();
+            var CVeteranUnitType = AccessTools.TypeByName("ZX.Components.CVeteranUnit");
+            foreach (var item in AllSelectedList)
             {
-                var HasComponent = AccessToolsEX.MethodWithDecrypt(cselectable.Entity.GetType(), "HasComponent", null, new Type[] { AccessTools.TypeByName("ZX.Components.CVeteranUnit") });
+                var cselectable = item as DXComponent;
+                //var HasComponent = AccessToolsEX.MethodWithDecrypt(cselectable.Entity.GetType(), "HasComponent", null, new Type[] { CVeteranUnitType });
                 if (cselectable == null || cselectable.Entity == null)
                 {
                     continue;
                 }
-                var ZXComponentsCVeteranUnit = HasComponent.Invoke(cselectable.Entity, null);
-                if (ZXComponentsCVeteranUnit == null)
-                {
-                    continue;
-                }
-                bool IsVeteran = (bool)ZXComponentsCVeteranUnit;
+
+                //var ZXComponentsCVeteranUnit = HasComponent.Invoke(cselectable.Entity, null);
+                bool IsVeteran = (bool)cselectable.Entity.CallMethod(new Type[] { CVeteranUnitType }, D("HasComponent"));
                 if (!IsVeteran && !DXVision.DXInputState.Current.IsKeyPressed(DXKeys.Shift))
                 {
-                    Traverse.Create((object)cselectable).PropertyWithDecrypt("Selected").SetValue(false);
+                    //Traverse.Create(cselectable).PropertyWithDecrypt("Selected").SetValue(false);
+                    cselectable.SetPropertyValue(D("Selected"), false);
                 }
                 else if (IsVeteran && DXVision.DXInputState.Current.IsKeyPressed(DXKeys.Shift))
                 {
-                    Traverse.Create((object)cselectable).PropertyWithDecrypt("Selected").SetValue(false);
+                    //Traverse.Create((object)cselectable).PropertyWithDecrypt("Selected").SetValue(false);
+                    cselectable.SetPropertyValue(D("Selected"), false);
                 }
             }
-            Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel")).MethodWithDecrypt("get_Current").MethodWithDecrypt("PlaySelectionSound").GetValue();
-            Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel")).MethodWithDecrypt("get_Current").MethodWithDecrypt("UpdateSelection").GetValue();
+            var ZXSystem_GameLevelType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
+            Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("PlaySelectionSound").GetValue();
+            Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("UpdateSelection").GetValue();
         }
 
         private static void NumpadFilterVeteran(DXKeys key)
@@ -611,6 +695,7 @@ namespace TABHelperMod
         static Type CSelectableType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CSelectable");
         static Type CUnitsHolderType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CUnitsHolder");
         static Type ZXSystem_GameLevel = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
+        static Type CBuildableType = AccessToolsEX.TypeByNameWithDecrypt("ZX.Components.CBuildable");
         private static void AutoGoWatchTower()
         {
             var ZXEntity_CurrentEntitySelected = Traverse.Create(CSelectableType).MethodWithDecrypt("get_CurrentEntitySelected").GetValue();
@@ -621,6 +706,15 @@ namespace TABHelperMod
 
             if (Traverse.Create(ZXEntity_CurrentEntitySelected).PropertyWithDecrypt("Team").GetValue<ZX.ZXTeamType>() != ZX.ZXTeamType.Player)
             {
+                return;
+            }
+
+            if (!ZXEntity_CurrentEntitySelected.GetType().IsSubclassOf(HumanArmyUnitType))
+            {
+                if ((bool)((DXEntity)ZXEntity_CurrentEntitySelected).CallMethod(new Type[] { CUnitsHolderType }, "HasComponent"))
+                {
+                    AutoGoWatchTowerB();
+                }
                 return;
             }
 
@@ -640,9 +734,16 @@ namespace TABHelperMod
             //Count the remaining empty slots in the tower
             foreach (var item in AllHolder)
             {
-                var Enabled = Traverse.Create(item.Entity).PropertyWithDecrypt("Enabled").GetValue<bool>();
+                var HolderEntity = item.Entity;
+                var Enabled = Traverse.Create(HolderEntity).PropertyWithDecrypt("Enabled").GetValue<bool>();
                 if (!Enabled)
                     continue;
+                //if HolderEntity is upgrading, skip it
+                var component = HolderEntity.CallMethod(new Type[] { CBuildableType }, D("GetComponent"));
+                if (component != null && (ZX.ZXBuildMode)component.GetPropertyValue(D("BuildMode")) == ZX.ZXBuildMode.Upgrading)
+                    continue;
+
+
                 int NTotalSlots = Traverse.Create(item).PropertyWithDecrypt("NTotalSlots").GetValue<int>();
                 int NSlotsUsed = Traverse.Create(item).PropertyWithDecrypt("NSlotsUsed").GetValue<int>();
                 if (NSlotsUsed < NTotalSlots)
@@ -664,20 +765,23 @@ namespace TABHelperMod
                         var TargetHolderEntity = CCommandableTargetEntity;
                         if (TargetHolderEntity == null)
                             continue;
+                        AllSelected.Remove(CCommandable);
                         if (holderUsedSlotCount.ContainsKey(TargetHolderEntity))
                         {
                             holderUsedSlotCount[TargetHolderEntity][1] += 1;
                             if (holderUsedSlotCount[TargetHolderEntity][1] >= holderUsedSlotCount[TargetHolderEntity][0])
                             {
                                 holderUsedSlotCount.Remove(TargetHolderEntity);
-                                AllSelected.Remove(CCommandable);
                             }
                         }
                     }
                 }
             }
 
-            List<object> allSelectedList = AllSelected.ToList();
+            List<object> allSelectedList = AllSelected.Where(x =>
+            {
+                return (bool)((DXComponent)x).Entity.CallMethod(D("get_Params")).GetPropertyValue(D("CanEnterInBuildings"));
+            }).ToList();
             while (allSelectedList.Count > 0)
             {
                 var current = (DXComponent)allSelectedList.First();
@@ -737,12 +841,122 @@ namespace TABHelperMod
                     }
 
                     // Set the target's selection status to false to avoid repeated tower placement
-                    item.SetPropertyValue(D("Selected"), false);
+                    if (ModOptions.Instance.DeselectUnitsAfterTowerSearch)
+                        item.SetPropertyValue(D("Selected"), false);
                     allSelectedList.Remove(item);
                 }
             }
             Traverse.Create(ZXSystem_GameLevel).MethodWithDecrypt("get_Current").MethodWithDecrypt("PlaySelectionSound").GetValue();
             Traverse.Create(ZXSystem_GameLevel).MethodWithDecrypt("get_Current").MethodWithDecrypt("UpdateSelection").GetValue();
+        }
+
+        /// <summary>
+        ///  if choose a tower, the units around it can enter the tower automatically
+        /// </summary>
+        private static void AutoGoWatchTowerB()
+        {
+            var AllSelected = CSelectableType.GetFieldValue(D("AllSelected")).CallMethod("ToList").ConvertToList();
+            var AllHolder = AllSelected.ToList();
+            var CommandableEntityType = HumanArmyUnitType;
+            var AllCommandableEntity = DXGame.Current.EntitiesOfType(CommandableEntityType);
+
+
+            Dictionary<DXEntity, int[]> holderUsedSlotCount = new Dictionary<DXEntity, int[]>();
+
+            //Count the remaining empty slots in the tower
+            foreach (var item2 in AllHolder)
+            {
+                var item = (DXComponent)item2;
+                var HolderEntity = item.Entity;
+                var Enabled = Traverse.Create(HolderEntity).PropertyWithDecrypt("Enabled").GetValue<bool>();
+                if (!Enabled)
+                    continue;
+                //if HolderEntity is upgrading, skip it
+                var component = HolderEntity.CallMethod(new Type[] { CBuildableType }, D("GetComponent"));
+                if (component != null && (ZX.ZXBuildMode)component.GetPropertyValue(D("BuildMode")) == ZX.ZXBuildMode.Upgrading)
+                    continue;
+
+                var CUnitsHolder = HolderEntity.CallMethod(new Type[] { CUnitsHolderType }, D("GetComponent"));
+                int NTotalSlots = Traverse.Create(CUnitsHolder).PropertyWithDecrypt("NTotalSlots").GetValue<int>();
+                int NSlotsUsed = Traverse.Create(CUnitsHolder).PropertyWithDecrypt("NSlotsUsed").GetValue<int>();
+                if (NSlotsUsed < NTotalSlots)
+                    holderUsedSlotCount.Add(item.Entity, new int[] { NTotalSlots, NSlotsUsed });
+            }
+            //合法的单位
+            List<DXEntity> avaliableUnits = AllCommandableEntity.Where(x =>
+            {
+                bool isInBuilding = (bool)x.CallMethod(new Type[] { CInsideBuildingType }, D("HasComponent"));
+                bool CanEnterInBuildings = (bool)x.CallMethod(D("get_Params")).GetPropertyValue(D("CanEnterInBuildings"));
+                return !isInBuilding && CanEnterInBuildings;
+            }).ToList();
+
+            //Count whether there are units already on the way to the tower
+            foreach (var item in AllCommandableEntity)
+            {
+                var CCommandable = Traverse.Create(item).MethodWithDecrypt("get_CCommandable").GetValue<DXComponent>();
+                if (Traverse.Create(CCommandable).MethodWithDecrypt("get_Command").GetValue()?.GetType().FullName == "ZX.Commands.Travel")
+                {
+                    var CCommandableTargetEntity = Traverse.Create(CCommandable).PropertyWithDecrypt("Target").FieldWithDecrypt("EntityRef").PropertyWithDecrypt("Entity").GetValue<DXEntity>();
+                    if (CCommandableTargetEntity == null)
+                        continue;
+                    var HasComponent = AccessToolsEX.MethodWithDecrypt(CCommandableTargetEntity.GetType(), "HasComponent", null, new Type[] { CUnitsHolderType });
+                    bool isHasComponent = (bool)HasComponent.Invoke(CCommandableTargetEntity, null);
+                    if (isHasComponent)
+                    {
+                        var TargetHolderEntity = CCommandableTargetEntity;
+                        if (TargetHolderEntity == null)
+                            continue;
+                        avaliableUnits.Remove(item);
+                        if (holderUsedSlotCount.ContainsKey(TargetHolderEntity))
+                        {
+                            holderUsedSlotCount[TargetHolderEntity][1] += 1;
+                            if (holderUsedSlotCount[TargetHolderEntity][1] >= holderUsedSlotCount[TargetHolderEntity][0])
+                            {
+                                holderUsedSlotCount.Remove(TargetHolderEntity);
+                            }
+                        }
+                    }
+                }
+            }
+
+            var AllHandlerHolder = holderUsedSlotCount.Keys.ToList();
+            foreach (var item in AllHandlerHolder)
+            {
+                var holderLeftSlot = holderUsedSlotCount[item][0] - holderUsedSlotCount[item][1];
+                var holderLeftSlotUnits = avaliableUnits.Where(x =>
+                {
+                    var entity = x;
+                    var distance = item.Position.DistanceTo(entity.Position);
+                    return distance <= ModOptions.Instance.AutoGoWatchTowerRadius;
+                }).OrderBy(x =>
+                {
+                    var entity = x;
+                    var distance = item.Position.DistanceTo(entity.Position);
+                    return distance;
+                }).Take(holderLeftSlot).ToList();
+                if (holderLeftSlotUnits.Count == 0)
+                    continue;
+
+                // alloc the units to the holder
+                foreach (var unit in holderLeftSlotUnits)
+                {
+                    var TravelCommand = ZXCommandType.CallMethod(new Type[] { TravelType }, D("Get"));
+                    var TargetHolder = item;
+                    var TargetHolderPosition = TargetHolder.Position;
+                    var Target = ZXCommandTargetType.CreateInstance(new object[] { TargetHolder });
+                    Target = Target.WrapIfValueType();
+                    Target.SetFieldValue(D("Position"), TargetHolderPosition);
+                    Target = Target.UnwrapIfWrapped();
+                    TravelCommand.CallMethod(D("Execute"), unit, Target);
+                    // Update tower vacancy statistics
+                    holderUsedSlotCount[item][1] += 1;
+                    if (holderUsedSlotCount[item][1] >= holderUsedSlotCount[item][0])
+                    {
+                        holderUsedSlotCount.Remove(item);
+                    }
+                    avaliableUnits.Remove(unit);
+                }
+            }
         }
 
         static internal double GameSpeed = 1.0;
@@ -1020,8 +1234,11 @@ namespace TABHelperMod
 
                         //返回新的存档名,名字规则为name+年y月m日d时H时M分S秒,标注是年月日时分秒
                         //string time = DateTime.Now.ToString("yyyyyMMddHHmmss");
-
-                        return name + "_" + time + ".zxsav";
+                        //System.Int32 ZX.ZXLevelState::ColonyDays()//System.Int32 ZX.ZXLevelState::ColonyDays()
+                        int ColonyDays = (int)ZXLevelStateType.CallMethod(D("get_Current")).GetPropertyValue(D("ColonyDays"));
+                        int ColonyHourOfDay = (int)ZXLevelStateType.CallMethod(D("get_Current")).GetPropertyValue(D("ColonyHourOfDay"));
+                        string gameDayEXT = "_D" + ColonyDays + "H" + ColonyHourOfDay;
+                        return name + gameDayEXT + "_" + time + ".zxsav";
                     }
 
                     //判断存档是否存在
@@ -1297,6 +1514,8 @@ namespace TABHelperMod
         }
 
         static MemberGetter TeamGetter = AccessToolsEX.TypeByNameWithDecrypt("ZX.Entities.ZXEntity").DelegateForGetPropertyValue(D("Team"));
+        private static Type ZXLevelStateType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXLevelState");
+
         public static bool CheckShowHealthBar(DXComponent clife)
         {
             if (displayAllLifeMetersType == DisplayAllLifeMetersType.All)
@@ -1336,6 +1555,35 @@ namespace TABHelperMod
             }
 
             return newInstructions;
+        }
+
+        internal static void OnTradeCommandExecuted(Object __instance, MethodBase __originalMethod, object[] __args)
+        {
+            if (DXInputState.Current.IsKeyPressed(DXKeys.Control))
+            {
+                //sell/buy all
+                while (true)
+                {
+                    bool canTrade = (bool)__instance.CallMethod(D("IsEnabledFor"), __args[0]);
+                    if (!canTrade)
+                    {
+                        break;
+                    }
+                    __instance.CallMethod(D("OnExecute"), __args[0], __args[1]);
+                }
+            }
+            else if (DXInputState.Current.IsKeyPressed(DXKeys.Shift))
+            {
+                DXHelper_Task.ExecuteWithDelay(100, () =>
+                {
+                    bool canTrade = (bool)__instance.CallMethod(D("IsEnabledFor"), __args[0]);
+                    if (!canTrade)
+                    {
+                        return;
+                    }
+                    __instance.CallMethod(D("OnExecute"), __args[0], __args[1]);
+                });
+            }
         }
     }
 }

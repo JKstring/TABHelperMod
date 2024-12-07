@@ -33,7 +33,8 @@ namespace TABHelperMod
             EnhancedSelection,
             DeselectUnitsAfterTowerSearch,
             BatchCancelCommand,
-            QuickBuyResource
+            QuickBuyResource,
+            QuickBuyResourceDelay
         }
         public bool KeepDisplayAllLifeMeters { get; set; } = true;
         public bool AutoGoWatchTower { get; set; } = true;
@@ -57,6 +58,7 @@ namespace TABHelperMod
         public bool DeselectUnitsAfterTowerSearch { get; set; } = true;
         public bool BatchCancelCommand { get; set; } = true;
         public bool QuickBuyResource { get; set; } = true;
+        public int QuickBuyResourceDelay { get; set; } = 100;
 
         public static ModOptions Instance { get; } = new ModOptions();
         private bool IsLoaded = false;
@@ -101,6 +103,7 @@ namespace TABHelperMod
             ini.AddField("DeselectUnitsAfterTowerSearch", "true", "true");
             ini.AddField("BatchCancelCommand", "true", "true");
             ini.AddField("QuickBuyResource", "true", "true");
+            ini.AddField("QuickBuyResourceDelay", "100", "100");
             if (!System.IO.File.Exists(path))
             {
                 ini.Write();
@@ -141,6 +144,7 @@ namespace TABHelperMod
             DeselectUnitsAfterTowerSearch = bool.Parse(ini.GetField("DeselectUnitsAfterTowerSearch", "true").Get());
             BatchCancelCommand = bool.Parse(ini.GetField("BatchCancelCommand", "true").Get());
             QuickBuyResource = bool.Parse(ini.GetField("QuickBuyResource", "true").Get());
+            QuickBuyResourceDelay = int.Parse(ini.GetField("QuickBuyResourceDelay", "100").Get());
         }
     }
 }

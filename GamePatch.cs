@@ -179,29 +179,6 @@ namespace TABHelperMod
                     GamePatch.NumpadFilterVeteran(key);
 
                 }
-                else if (key == DXKeys.D0)
-                {
-                    if (!ModOptions.Instance.GameSpeedChange)
-                    {
-                        return;
-                    }
-                    var type = AccessTools.TypeByName("DXVision.DXGame");
-                    var gameSpeed = DXGame.Current.GameSpeed;
-                    if (!DXGame.Current.Paused)
-                    {
-                        DXGame.Current.GameSpeed = 1.0;
-                        gameSpeed = DXGame.Current.GameSpeed;
-                        var ZXSystem_GameLevelType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
-                        Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("ShowMessage", new Type[] { typeof(string), typeof(System.Drawing.Color), typeof(int) }).GetValue("Now Game Speed: " + gameSpeed, System.Drawing.Color.White, 2000);
-                    }
-                    else
-                    {
-                        GameSpeed = 1.0;
-                        var ZXSystem_GameLevelType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
-                        Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("ShowMessage", new Type[] { typeof(string), typeof(System.Drawing.Color), typeof(int) }).GetValue("Now Game Speed: " + GameSpeed, System.Drawing.Color.White, 2000);
-                    }
-
-                }
                 else if (key == DXKeys.Oemplus)
                 {
                     if (!ModOptions.Instance.GameSpeedChange)
@@ -214,6 +191,10 @@ namespace TABHelperMod
                         var type = AccessTools.TypeByName("DXVision.DXGame");
                         var gameSpeed = Traverse.Create(type).Property("Current").Property("GameSpeed").GetValue<double>();
                         gameSpeed += 1;
+                        if (DXInputState.Current.IsKeyPressed(DXKeys.Control))
+                        {
+                            gameSpeed = 20;
+                        }
                         Traverse.Create(type).Property("Current").Property("GameSpeed").SetValue(gameSpeed);
                         var ZXSystem_GameLevelType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
                         Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("ShowMessage", new Type[] { typeof(string), typeof(System.Drawing.Color), typeof(int) }).GetValue("Now Game Speed: " + gameSpeed, System.Drawing.Color.White, 2000);
@@ -221,6 +202,10 @@ namespace TABHelperMod
                     else
                     {
                         GameSpeed += 1;
+                        if (DXInputState.Current.IsKeyPressed(DXKeys.Control))
+                        {
+                            GameSpeed = 20;
+                        }
                         var ZXSystem_GameLevelType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
                         Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("ShowMessage", new Type[] { typeof(string), typeof(System.Drawing.Color), typeof(int) }).GetValue("Now Game Speed: " + GameSpeed, System.Drawing.Color.White, 2000);
                     }
@@ -238,6 +223,10 @@ namespace TABHelperMod
                         var gameSpeed = Traverse.Create(type).Property("Current").Property("GameSpeed").GetValue<double>();
                         gameSpeed -= 1;
                         gameSpeed = Math.Max(gameSpeed, 1);
+                        if (DXInputState.Current.IsKeyPressed(DXKeys.Control))
+                        {
+                            gameSpeed = 1;
+                        }
                         Traverse.Create(type).Property("Current").Property("GameSpeed").SetValue(gameSpeed);
                         var ZXSystem_GameLevelType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
                         Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("ShowMessage", new Type[] { typeof(string), typeof(System.Drawing.Color), typeof(int) }).GetValue("Now Game Speed: " + gameSpeed, System.Drawing.Color.White, 2000);
@@ -246,6 +235,10 @@ namespace TABHelperMod
                     {
                         GameSpeed -= 1;
                         GameSpeed = Math.Max(GameSpeed, 1);
+                        if (DXInputState.Current.IsKeyPressed(DXKeys.Control))
+                        {
+                            GameSpeed = 1;
+                        }
                         var ZXSystem_GameLevelType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXSystem_GameLevel");
                         Traverse.Create(ZXSystem_GameLevelType).MethodWithDecrypt("get_Current").MethodWithDecrypt("ShowMessage", new Type[] { typeof(string), typeof(System.Drawing.Color), typeof(int) }).GetValue("Now Game Speed: " + GameSpeed, System.Drawing.Color.White, 2000);
                     }
@@ -1193,11 +1186,11 @@ namespace TABHelperMod
 
 
                     string name = Traverse.Create(AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXGameState")).MethodWithDecrypt("get_Current").PropertyWithDecrypt("Name").GetValue<string>();
-
+                    name = DXHelper_Path.FixFileName(name);
                     var ZXGameType = AccessToolsEX.TypeByNameWithDecrypt("ZX.ZXGame");
                     var savePath = (string)ZXGameType.CallMethod(D("get_SaveGameFolder"));
                     var saveFile = System.IO.Path.Combine(savePath, name + ".zxsav");
-
+                    saveFile = DXHelper_Path.FixFileName(saveFile);
 
                     string GetAvailableSaveSlots(string filename)
                     {
@@ -1243,7 +1236,6 @@ namespace TABHelperMod
 
                     //判断存档是否存在
                     var newfilename = GetAvailableSaveSlots(saveFile);
-
                     //Current.MethodWithDecrypt("SaveGame", new Type[] { typeof(string), typeof(Action), typeof(bool), typeof(bool) }).GetValue(name, null, true, true);
                     Current.MethodWithDecrypt("SaveGame", new Type[] { typeof(string), typeof(Action), typeof(bool), typeof(bool) }).GetValue(newfilename, null, true, true);
                     //重置自动保存时间
@@ -1559,31 +1551,42 @@ namespace TABHelperMod
 
         internal static void OnTradeCommandExecuted(Object __instance, MethodBase __originalMethod, object[] __args)
         {
-            if (DXInputState.Current.IsKeyPressed(DXKeys.Control))
+            ModEntry.harmonyInstance.Unpatch(__originalMethod, HarmonyPatchType.All, ModEntry.harmonyInstance.Id);
+            try
             {
-                //sell/buy all
-                while (true)
+                if (DXInputState.Current.IsKeyPressed(DXKeys.Control))
                 {
-                    bool canTrade = (bool)__instance.CallMethod(D("IsEnabledFor"), __args[0]);
-                    if (!canTrade)
+                    //sell/buy all
+                    //
+                    while (true)
                     {
-                        break;
+                        bool canTrade = (bool)__instance.CallMethod(D("IsEnabledFor"), __args[0]);
+                        if (!canTrade)
+                        {
+                            break;
+                        }
+                        __instance.CallMethod(D("OnExecute"), __args[0], __args[1]);
                     }
-                    __instance.CallMethod(D("OnExecute"), __args[0], __args[1]);
+                }
+                else if (DXInputState.Current.IsKeyPressed(DXKeys.Shift))
+                {
+                    DXHelper_Task.ExecuteWithDelay(ModOptions.Instance.QuickBuyResourceDelay, () =>
+                    {
+                        bool canTrade = (bool)__instance.CallMethod(D("IsEnabledFor"), __args[0]);
+                        if (!canTrade)
+                        {
+                            return;
+                        }
+                        __instance.CallMethod(D("OnExecute"), __args[0], __args[1]);
+                    });
                 }
             }
-            else if (DXInputState.Current.IsKeyPressed(DXKeys.Shift))
+            finally
             {
-                DXHelper_Task.ExecuteWithDelay(100, () =>
-                {
-                    bool canTrade = (bool)__instance.CallMethod(D("IsEnabledFor"), __args[0]);
-                    if (!canTrade)
-                    {
-                        return;
-                    }
-                    __instance.CallMethod(D("OnExecute"), __args[0], __args[1]);
-                });
+                // 在循环结束后重新加回补丁
+                ModEntry.harmonyInstance.Patch(__originalMethod, new HarmonyMethod(AccessTools.Method(typeof(GamePatch), nameof(OnTradeCommandExecuted))));
             }
+
         }
     }
 }

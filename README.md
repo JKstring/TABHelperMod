@@ -1,3 +1,9 @@
+# Important Notice
+
+Since the game developers have removed ModLoader from the Steam Workshop, the loader has been migrated to [GitHub](https://github.com/JKstring/TABModLoader). Please visit the link to download the latest version and deploy it.
+
+---
+
 # They Are Billions Mod Sample Project
 
 This project provides a sample Mod for *They Are Billions*, designed to help players quickly create and load their own Mods, as well as demonstrate some of the game’s features.

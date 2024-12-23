@@ -1,3 +1,9 @@
+# 重要说明
+
+由于游戏开发者在创意工坊移除了 ModLoader，加载器现在已迁移至 [GitHub](https://github.com/JKstring/TABModLoader)。请前往上述链接获取最新版本的加载器并进行部署。
+
+---
+
 # They Are Billions Mod 示例项目
 
 本项目是为《They Are Billions》游戏的 Mod 示例，旨在帮助玩家快速创建和加载自己的 Mod，并展示一些游戏特性。
